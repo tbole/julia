@@ -224,6 +224,8 @@ objectid(@nospecialize(x)) = ccall(:jl_object_id, UInt, (Any,), x)
 
 # concrete datatype predicates
 
+# concrete datatype predicates
+
 struct DataTypeLayout
     nfields::UInt32
     alignment::UInt32
