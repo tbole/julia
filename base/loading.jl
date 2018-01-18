@@ -527,11 +527,12 @@ end
 # look for an entry point for `name`:
 #  - `false` means: did not find `name`
 #  - `true` means: found `name` without UUID
-#  - `uuid` means: found `name` mapped to `uuid` in project deps
+#  - `uuid` means: found `name` with `uuid` in project file
 function implicit_project_deps_get(dir::String, name::String)::Union{Bool,UUID}
     path, project_file = entry_point_and_project_file(dir, name)
     project_file == nothing && return path != nothing
-    explicit_project_deps_get(project_file, name)
+    uuid = project_file_uuid(project_file)
+    uuid == nothing || uuid
 end
 
 # look for an entry-point for `where` by name, check that UUID matches

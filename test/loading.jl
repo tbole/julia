@@ -79,14 +79,14 @@ mktempdir() do dir
     end
 end
 
-import Base: UUID
+import Base: UUID, PkgId, load_path, identify_package, locate_package
 
 saved_load_path = copy(LOAD_PATH)
 saved_depot_path = copy(DEPOT_PATH)
 push!(empty!(LOAD_PATH), "project")
 push!(empty!(DEPOT_PATH), "depot")
 
-@test Base.load_path() == [abspath("project","Project.toml")]
+@test load_path() == [abspath("project","Project.toml")]
 
 @testset "project & manifest identify_package & locate_package" begin
     local path
@@ -98,12 +98,12 @@ push!(empty!(DEPOT_PATH), "depot")
         ("Foo.Qux", "b5ec9b9c-e354-47fd-b367-a348bdc8f909", "project/deps/Qux.jl"                ),
     ]
         n = map(String, split(names, '.'))
-        pkg = Base.identify_package(n...)
-        @test pkg == Base.PkgId(UUID(uuid), n[end])
-        @test joinpath(@__DIR__, normpath(path)) == Base.locate_package(pkg)
+        pkg = identify_package(n...)
+        @test pkg == PkgId(UUID(uuid), n[end])
+        @test joinpath(@__DIR__, normpath(path)) == locate_package(pkg)
     end
-    @test Base.identify_package("Baz") == nothing
-    @test Base.identify_package("Qux") == nothing
+    @test identify_package("Baz") == nothing
+    @test identify_package("Qux") == nothing
     @testset "equivalent package names" begin
         local classes = [
             ["Foo"],
@@ -118,15 +118,15 @@ push!(empty!(DEPOT_PATH), "depot")
         for i = 1:length(classes)
             A = classes[i]
             for x in A
-                X = Base.identify_package(map(String, split(x, '.'))...)
+                X = identify_package(map(String, split(x, '.'))...)
                 for y in A
-                    Y = Base.identify_package(map(String, split(y, '.'))...)
+                    Y = identify_package(map(String, split(y, '.'))...)
                     @test X == Y
                 end
                 for j = i+1:length(classes)
                     B = classes[j]
                     for z in B
-                        Z = Base.identify_package(map(String, split(z, '.'))...)
+                        Z = identify_package(map(String, split(z, '.'))...)
                         @test X != Z
                     end
                 end
@@ -171,6 +171,70 @@ end
         end
     end
     @test Foo.which == "path"
+end
+
+function gen_entry_point(entry::String, pkg::PkgId)
+    mkpath(dirname(entry))
+    open(entry, "w") do io
+        print(io, """
+        __precompile__(true)
+        module $(pkg.name)
+        uuid = $(pkg.uuid === nothing ? "nothing" : "Base.UUID(\"$(pkg.uuid)\")")
+        name = "$(pkg.name)"
+        end
+        """)
+    end
+end
+
+function gen_project_file(project_file::String, pkg::PkgId, deps::Pair{String,UUID}...)
+    mkpath(dirname(project_file))
+    open(project_file, "w") do io
+        println(io, "name = $(repr(pkg.name))")
+        pkg.uuid !== nothing && println(io, "uuid = $(repr(string(pkg.uuid)))")
+        isempty(deps) && return
+        println(io, "\n[deps]")
+        for (name, uuid) in deps
+            println(io, "$name = ", repr(string(uuid)))
+        end
+    end
+end
+
+function gen_implicit(dir::String, pkg::PkgId, proj::Bool, deps::Pair{String,UUID}...)
+    gen_entry_point(joinpath(dir, pkg.name, "src", "$(pkg.name).jl"), pkg)
+    proj && gen_project_file(joinpath(dir, pkg.name, "Project.toml"), pkg, deps...)
+end
+
+const uuidA = UUID("b2cb3794-8625-4058-bcde-7eeb13ac1c8b")
+const uuidB = UUID("1513c021-3639-4616-a37b-ee45c9d2f773")
+const uuids = [nothing, uuidA, uuidB]
+
+ft(::UUID)    =  true:true
+ft(::Nothing) = false:true
+
+@testset "top-level overlay loading" begin
+    name = "Flarp"
+    for uuid1 in uuids, proj1 in ft(uuid1),
+        uuid2 in uuids, proj2 in ft(uuid2)
+        pkg1 = uuid1 === nothing ? PkgId(name) : PkgId(uuid1, name)
+        pkg2 = uuid2 === nothing ? PkgId(name) : PkgId(uuid2, name)
+        empty!(LOAD_PATH)
+        mktempdir() do dir1
+            push!(LOAD_PATH, dir1)
+            path1 = joinpath(dir1, name, "src", "$name.jl")
+            gen_implicit(dir1, pkg1, proj1)
+            @test identify_package(name) == pkg1
+            @test locate_package(pkg1) == path1
+            mktempdir() do dir2
+                push!(LOAD_PATH, dir2)
+                path2 = joinpath(dir2, name, "src", "$name.jl")
+                entry = uuid1 == coalesce(uuid2, uuid1) ? path1 : path2
+                gen_implicit(dir2, pkg2, proj2)
+                @test identify_package(name) == pkg1
+                @test locate_package(pkg1) == path1
+                @test locate_package(pkg2) == entry
+            end
+        end
+    end
 end
 
 append!(empty!(DEPOT_PATH), saved_depot_path)
