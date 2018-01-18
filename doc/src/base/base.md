@@ -305,7 +305,7 @@ Base.AsyncCondition(::Function)
 ## Reflection
 
 ```@docs
-Base.module_name
+Base.name
 Base.parentmodule
 Base.@__MODULE__
 Base.fullname

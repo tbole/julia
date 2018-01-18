@@ -954,6 +954,8 @@ Deprecated or removed
 
   * The module `Random.dSFMT` is renamed `Random.DSFMT` ([#25567]).
 
+  * `module_name` has been deprecated in favor of a new, general `name` function ([#25622]).
+
   * The generic implementations of `strides(::AbstractArray)` and `stride(::AbstractArray, ::Int)`
      have been deprecated. Subtypes of `AbstractArray` that implement the newly introduced strided
      array interface should define their own `strides` method ([#25321]).
@@ -1217,3 +1219,4 @@ Command-line option changes
 [#25424]: https://github.com/JuliaLang/julia/issues/25424
 [#25532]: https://github.com/JuliaLang/julia/issues/25532
 [#25545]: https://github.com/JuliaLang/julia/issues/25545
+[#25622]: https://github.com/JuliaLang/julia/issues/25622
