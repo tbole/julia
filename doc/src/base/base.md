@@ -317,7 +317,6 @@ Base.fieldcount
 Base.propertynames
 Base.datatype_name
 Base.isconst
-Base.function_name
 Base.functionloc(::Any, ::Any)
 Base.functionloc(::Method)
 Base.@functionloc
