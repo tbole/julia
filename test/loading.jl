@@ -79,7 +79,7 @@ mktempdir() do dir
     end
 end
 
-import Base: UUID, PkgId, load_path, identify_package, locate_package
+import Base: UUID, SHA1, PkgId, load_path, identify_package, locate_package, version_slug
 
 saved_load_path = copy(LOAD_PATH)
 saved_depot_path = copy(DEPOT_PATH)
@@ -191,7 +191,6 @@ function gen_project_file(project_file::String, pkg::PkgId, deps::Pair{String,UU
     open(project_file, "w") do io
         println(io, "name = $(repr(pkg.name))")
         pkg.uuid !== nothing && println(io, "uuid = $(repr(string(pkg.uuid)))")
-        isempty(deps) && return
         println(io, "\n[deps]")
         for (name, uuid) in deps
             println(io, "$name = ", repr(string(uuid)))
@@ -204,17 +203,50 @@ function gen_implicit(dir::String, pkg::PkgId, proj::Bool, deps::Pair{String,UUI
     proj && gen_project_file(joinpath(dir, pkg.name, "Project.toml"), pkg, deps...)
 end
 
+function gen_depot_ver(depot::String, pkg::PkgId, deps::Pair{String,UUID}...)
+    pkg.uuid === nothing && error("package UUID required in explicit env")
+    tree = SHA1(rand(UInt8, 20)) # fake tree hash
+    dir = joinpath(depot, "packages", version_slug(pkg.uuid, tree))
+    entry = joinpath(dir, "src", "$(pkg.name).jl")
+    gen_entry_point(entry, pkg)
+    gen_project_file(joinpath(dir, "Project.toml"), pkg, deps...)
+    return tree, entry
+end
+
+function gen_explicit(dir::String, pkg::PkgId=PkgId("Dummy"))
+    gen_project_file(joinpath(dir, "Project.toml"), pkg)
+end
+
+function gen_manifest(dir::String, name::String, uuid::UUID, tree::SHA1,
+    deps::Pair{String,UUID}...; toplevel::Bool = true)
+    toplevel && open(joinpath(dir, "Project.toml"), "a") do io
+        println(io, "$name = \"$uuid\"")
+    end
+    open(joinpath(dir, "Manifest.toml"), "a") do io
+        println(io, "[[$name]]")
+        println(io, "uuid = \"$uuid\"")
+        println(io, "hash-sha1 = \"$(bytes2hex(tree.bytes))\"")
+        if !isempty(deps)
+            println("    [$name.deps]")
+            for (n, u) in deps
+                println("    $n = \"$u\"")
+            end
+        end
+        println(io)
+    end
+end
+
+const name = "Flarp"
 const uuidA = UUID("b2cb3794-8625-4058-bcde-7eeb13ac1c8b")
 const uuidB = UUID("1513c021-3639-4616-a37b-ee45c9d2f773")
-const uuids = [nothing, uuidA, uuidB]
+const uuids = [uuidA, uuidB]
 
 ft(::UUID)    =  true:true
 ft(::Nothing) = false:true
 
-@testset "top-level overlay loading" begin
-    name = "Flarp"
-    for uuid1 in uuids, proj1 in ft(uuid1),
-        uuid2 in uuids, proj2 in ft(uuid2)
+@testset "top-level loading: implict + implicit" begin
+    for uuid1 in [nothing; uuids], proj1 in ft(uuid1),
+        uuid2 in [nothing; uuids], proj2 in ft(uuid2)
         pkg1 = uuid1 === nothing ? PkgId(name) : PkgId(uuid1, name)
         pkg2 = uuid2 === nothing ? PkgId(name) : PkgId(uuid2, name)
         empty!(LOAD_PATH)
@@ -224,14 +256,48 @@ ft(::Nothing) = false:true
             gen_implicit(dir1, pkg1, proj1)
             @test identify_package(name) == pkg1
             @test locate_package(pkg1) == path1
+            path = uuid1 == coalesce(uuid2, uuid1) ? path1 : nothing
+            @test locate_package(pkg2) == path
             mktempdir() do dir2
                 push!(LOAD_PATH, dir2)
                 path2 = joinpath(dir2, name, "src", "$name.jl")
-                entry = uuid1 == coalesce(uuid2, uuid1) ? path1 : path2
                 gen_implicit(dir2, pkg2, proj2)
                 @test identify_package(name) == pkg1
                 @test locate_package(pkg1) == path1
-                @test locate_package(pkg2) == entry
+                path = uuid1 == coalesce(uuid2, uuid1) ? path1 : path2
+                @test locate_package(pkg2) == path
+            end
+        end
+    end
+end
+
+@testset "top-level loading: explicit + explicit" begin
+    mktempdir() do depot
+        push!(empty!(DEPOT_PATH), depot)
+        pkgs  = [PkgId(uuid, name) for uuid in uuids]
+        pairs = [gen_depot_ver(depot, pkg) for pkg in pkgs, _ in 1:2]
+        trees = first.(pairs)
+        paths = last.(pairs)
+        for i = 1:length(uuids), k = 1:2,
+            j = 1:length(uuids), l = 1:2
+            empty!(LOAD_PATH)
+            mktempdir() do dir1
+                push!(LOAD_PATH, dir1)
+                gen_explicit(dir1)
+                gen_manifest(dir1, name, uuids[i], trees[i,k])
+                @test identify_package(name) == pkgs[i]
+                @test locate_package(pkgs[i]) == paths[i,k]
+                path = uuids[i] == uuids[j] ? paths[i,k] : nothing
+                @test locate_package(pkgs[j]) == path
+                mktempdir() do dir2
+                    push!(LOAD_PATH, dir2)
+                    gen_explicit(dir2)
+                    gen_manifest(dir2, name, uuids[j], trees[j,l])
+                    @test identify_package(name) == pkgs[i]
+                    @test locate_package(pkgs[i]) == paths[i,k]
+                    path = uuids[i] == uuids[j] ? paths[i,k] : paths[j,l]
+                    @test locate_package(pkgs[j]) == path
+                end
             end
         end
     end
