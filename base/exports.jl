@@ -856,7 +856,7 @@ export
     listenany,
     ltoh,
     mark,
-    nb_available,
+    bytesleft,
     ntoh,
     open,
     pipeline,

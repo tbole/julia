@@ -1573,6 +1573,8 @@ end
 
 @deprecate object_id objectid
 
+@deprecate nb_available bytesleft
+
 # issue #9053
 if Sys.iswindows()
 function Filesystem.tempname(uunique::UInt32)

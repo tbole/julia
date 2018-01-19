@@ -690,6 +690,8 @@ Deprecated or removed
 
   * `read(::IO, ::Ref)` is now a method of `read!`, since it mutates its `Ref` argument ([#21592]).
 
+  * `nb_available` is now `bytesleft` ([#TODO]).
+
   * `Bidiagonal` constructors now use a `Symbol` (`:U` or `:L`) for the upper/lower
     argument, instead of a `Bool` or a `Char` ([#22703]).
 
